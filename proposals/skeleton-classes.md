@@ -1,9 +1,9 @@
 # Skeleton Classes
 
 * [x] Proposed
-* [ ] Prototype: [Not Started](https://github.com/PROTOTYPE_OWNER/roslyn/BRANCH_NAME)
-* [ ] Implementation: [Not Started](https://github.com/dotnet/roslyn/BRANCH_NAME)
-* [ ] Specification: [Not Started](pr/1)
+* [ ] Prototype: In Progress
+* [ ] Implementation: Not Started
+* [ ] Specification: Not Started
 
 ## Summary
 [summary]: #summary
@@ -128,10 +128,39 @@ public class MyDependencyObject : DependencyObject
 
 The compiler expansion of static members and methods is no different than that shown for properties.
 
+### Interactions
+How does `auto` interact with other modifiers?
+
+#### abstract/virtual/override/sealed
+Auto members have an implied body. Therefore `auto` and `abstract` are not permitted on the same declaration. The other inheritance modifiers continue to work as before.
+
+#### private/protected/internal/public etc.
+Continue to work as before. Note that the GetXImplementation methods have independent visibility. It is therefore possible for code to circumvent certain property/method access restrictions by going directly to these methods. It should be possible for the framework author to protect against this by yielding the implementation for any given PropertyInfo/MethodInfo only once.
+
+#### extern
+Not permitted together with `auto`. Side thought: A more symmetric name for `auto` might have been `intern` given the similarities in functionality, however this is too close to `internal` and may introduce confusion.
+
+#### static
+The static modifier works as before. Pattern-based implementation for static members is definitely a viable use case. In the WPF-like DependencyObject illustrated above, patterns are used to publish XProperty meta tokens for use in SetBinding() calls etc. 
+
+#### event
+Supported. A different GetXImplementation method is used for add/remove.
+
+### Property Defaults
+The following syntax can currently be used to initialize auto-props:
+
+```csharp
+public string Title { get; set; } = "Default Title";
+```
+
+This translates to a .ctor STFLD operation on the backing field. In the case of pattern-based implementation it is proposed that this would be implemented by a call to the property setter instead.
+
 ## Drawbacks
 [drawbacks]: #drawbacks
 
-TBC. For discussion.
+TBC. The proposed functionality is opt-in, easy to understand and does not break existing code. No obvious drawbacks come to mind.
+
+For discussion.
 
 ## Alternatives
 [alternatives]: #alternatives
@@ -144,11 +173,19 @@ Alternative techniques are available, but are considerably less accessible.
 
 * **Fody.** Post-compilation MSIL generation/injection. Similar to runtime proxy generation but instead of generating code at runtime it is done at compile-time. This is also an advanced technique requiring a good understanding of MSIL and some considerable patience. Requires the installation of Fody into your tool-chain.
 
-These are all viable alternatives but the "cognitive load" of setting them up and maintaining them is fairly prohibitive. The range of techniques already in use demonstrates a clear desire to solve this problem. The proposal outlined here provides a simple, elegant solution that is baked into the language itself, much easier to understand, and flexible enough to cover a wide variety of use cases.
+These are all viable alternatives but the "cognitive load" of setting them up and maintaining them is fairly prohibitive. The range of techniques already in use demonstrates a clear desire to solve this problem. The proposal outlined here provides a simple, elegant solution that is baked-in to the language itself, much easier to understand, and flexible enough to cover a wide variety of use cases.
 
 ## Unresolved questions
 [unresolved]: #unresolved-questions
 
+### The Keyword
+Is the `auto` keyword actually required? Or desirable? Instinctively, this feels necessary for code clarity; i.e. if something _non-standard_ is happening it is desirable to sign-post it. However, as Neal Gafter points out in his [blog](http://gafter.blogspot.co.uk/2017/06/making-new-language-features-stand-out.html), if/once the feature becomes part of the language it should ideally _become one with_ the language. The additional keyword may just contribute to the boilerplate we are trying to avoid in the first place.
+
+Experience tells me that simply inheriting a well-known base is enough to imply conventions (such as PropertyChangedBase or ImmutableBase above). The feature could instead commandeer existing syntax for auto-implemented properties and bodyless methods. In this case we would need to make sure the GetXImplementation method names are not in common use or introduce some kind of interface like IEnumerable to signal our intent on the base class.
+
+It is not clear how this would work for events.
+
+### Data Slots
 One idea to consider further is the generation of "data slots" on the target class.
 
 Taking PropertyChangedBase as an example, any potential implementation of this class must find a way to dynamically store and retrieve property values. A naive approach is to store the properties in a dictionary, but the performance of this would be poor. A smarter implementation could potentially assign slot numbers in an array, or pack primitive types into a byte array to avoid the heap allocation. The static initialization permits a range of decisions to be made ahead-of-time and thus optimize the delegate accordingly.
